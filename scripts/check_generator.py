@@ -2,6 +2,7 @@
 
 Usage:  python scripts/check_generator.py independent
         python scripts/check_generator.py copula
+        python scripts/check_generator.py simulator
 
 Not the final evaluation (that comes in step 4): just enough to see, with our
 own eyes, what a generator keeps and what it breaks.
@@ -21,6 +22,7 @@ from synthsupply.prepare import COLUMNS, NUMERIC, load_reference, split  # noqa:
 GENERATORS = {
     "independent": lambda: G.IndependentMarginals(seed=42),
     "copula": lambda: G.GaussianCopula(seed=42),
+    "simulator": lambda: G.DomainSimulator(seed=42),
 }
 MODES = ["Same Day", "First Class", "Second Class", "Standard Class"]
 
@@ -60,6 +62,15 @@ def main(name: str):
     }).loc[MODES]
     print("3) Late rate by shipping mode:")
     print(comp.round(3).to_string())
+
+    # 4. Do delays now have causes? (only meaningful for the simulator)
+    print("\n4) Late rate by month (real vs synthetic):")
+    print(pd.DataFrame({"real": holdout.groupby("order_month").late.mean(),
+                        "synthetic": synth.groupby("order_month").late.mean()}).round(3).T.to_string())
+    if "supplier_id" in synth:
+        by_sup = synth.groupby("supplier_id").late.mean().sort_values()
+        print(f"\n5) Late rate by supplier: from {by_sup.min():.0%} ({by_sup.index[0]}) "
+              f"to {by_sup.max():.0%} ({by_sup.index[-1]}); real overall {holdout.late.mean():.0%}")
 
 
 if __name__ == "__main__":
