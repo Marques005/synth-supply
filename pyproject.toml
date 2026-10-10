@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synthsupply"
+version = "0.1.0"
+description = "Synthetic procurement and fulfilment data generators, and how to judge them"
+requires-python = ">=3.10"
+dependencies = ["pandas", "numpy", "scipy", "scikit-learn"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

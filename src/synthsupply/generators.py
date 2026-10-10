@@ -201,7 +201,8 @@ class DomainSimulator:
         risk = (df.supplier_id.map(self.supplier_risk)                                     # 8
                 + df.market.map(self.market_risk)
                 + self.peak_effect * df.order_month.isin([11, 12]))
-        risk = (risk - risk.mean()) + df.supplier_id.map(self.supplier_shocks).fillna(0.0)
+        self.risk_center_ = risk.mean()                     # kept so late_probability() matches
+        risk = (risk - self.risk_center_) + df.supplier_id.map(self.supplier_shocks).fillna(0.0)
         risk = 0.5 * risk.to_numpy()
         df["days_real"] = 0
         for mode, idx in df.groupby("shipping_mode").indices.items():
@@ -209,3 +210,28 @@ class DomainSimulator:
                 self._tilted_offsets(mode, risk[idx])
         df["late"] = (df.days_real > df.days_scheduled).astype(int)                       # 9
         return df[COLUMNS + ["supplier_id"]]
+
+    # ---- ground truth (only the simulator can know this) ---------------------
+    def late_probability(self, df: pd.DataFrame) -> np.ndarray:
+        """Exact P(late) for each row, from the same risk and tilt that sample() uses.
+
+        Lets P2 compare a model's predicted probabilities with the truth, and score
+        supplier recommendations against the best possible choice. Call it after
+        sample(), which sets the risk centre.
+        """
+        risk = (df.supplier_id.map(self.supplier_risk)
+                + df.market.map(self.market_risk)
+                + self.peak_effect * df.order_month.isin([11, 12]))
+        risk = (risk - self.risk_center_) + df.supplier_id.map(self.supplier_shocks).fillna(0.0)
+        risk = 0.5 * risk.to_numpy()
+        out = np.empty(len(df))
+        for mode, idx in df.groupby("shipping_mode").indices.items():
+            values, probs = self.offset_given_mode[mode]
+            if len(values) == 1:                       # e.g. First Class: always the same offset
+                out[idx] = float(values[0] > 0)
+                continue
+            z = (values - values.mean()) / values.std()
+            w = probs[None, :] * np.exp(self.risk_strength * risk[idx][:, None] * z[None, :])
+            w /= w.sum(axis=1, keepdims=True)
+            out[idx] = w[:, values > 0].sum(axis=1)     # late = arrived after the promise
+        return out
